@@ -295,8 +295,8 @@ with st.sidebar:
     st.caption("Data: jfjelstul/worldcup • scikit-learn")
 
 # ─── Tabs ─────────────────────────────────────────────────────────────────────
-tab_groups, tab_bracket, tab_champ = st.tabs([
-    "⚽  GROUP STAGE", "🥊  KNOCKOUT BRACKET", "🏆  CHAMPION PREDICTION"
+tab_groups, tab_bracket, tab_champ, tab_custom = st.tabs([
+    "⚽  GROUP STAGE", "🥊  KNOCKOUT BRACKET", "🏆  CHAMPION PREDICTION", "🎯  CUSTOM MATCH"
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -503,6 +503,143 @@ with tab_champ:
             rest = list(champ_probs.items())[16:]
             for team, pct in rest:
                 st.caption(f"{team}: {pct}%")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 – CUSTOM MATCH PREDICTOR
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_custom:
+    st.markdown("### Custom Match Predictor")
+    st.caption("Pick any two teams and get a head-to-head prediction.")
+
+    # All teams from dataset
+    df_modern = df_raw[df_raw["match_date"].str[:4].astype(int) >= 1990]
+    ALL_TEAMS = sorted(set(df_modern["home_team_name"].tolist() + df_modern["away_team_name"].tolist()))
+
+    c1, c_vs, c2 = st.columns([5, 1, 5])
+    with c1:
+        st.markdown("**🏠 Home Team**")
+        home_pick = st.selectbox("Home", ALL_TEAMS,
+                                 index=ALL_TEAMS.index("Brazil") if "Brazil" in ALL_TEAMS else 0,
+                                 label_visibility="collapsed", key="custom_home")
+    with c_vs:
+        st.markdown('<div style="font-family:\'Bebas Neue\',sans-serif;font-size:1.8rem;'
+                    'color:#f5c518;text-align:center;padding-top:0.4rem;">VS</div>',
+                    unsafe_allow_html=True)
+    with c2:
+        st.markdown("**✈️ Away Team**")
+        away_pick = st.selectbox("Away", ALL_TEAMS,
+                                 index=ALL_TEAMS.index("Germany") if "Germany" in ALL_TEAMS else 1,
+                                 label_visibility="collapsed", key="custom_away")
+
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        stage_pick = st.radio("Stage", ["Group Stage", "Knockout"], horizontal=True, key="custom_stage")
+    with col_s2:
+        year_pick = st.slider("Year", 2022, 2030, 2026, step=4, key="custom_year")
+
+    st.markdown("")
+    predict_btn = st.button("⚡ Predict Outcome", key="custom_predict")
+
+    if home_pick == away_pick:
+        st.warning("Please select two different teams.")
+    elif predict_btn:
+        ko = 1 if stage_pick == "Knockout" else 0
+        res = predict_match(mdl, team_history, home_pick, away_pick,
+                            stage_knockout=ko, year=year_pick)
+
+        pred = res["prediction"]
+        hw, dp, aw = res["home_win_prob"], res["draw_prob"], res["away_win_prob"]
+
+        if pred == "Home Win":
+            color, emoji, label = "#4ade80", "🟢", f"{home_pick} Win"
+        elif pred == "Draw":
+            color, emoji, label = "#f5c518", "🟡", "Draw"
+        else:
+            color, emoji, label = "#f87171", "🔴", f"{away_pick} Win"
+
+        # Result banner
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid #2a2a4a;
+                    border-radius:12px;padding:1.5rem;margin:1rem 0;text-align:center;">
+            <div style="color:#888;font-size:0.72rem;letter-spacing:0.18em;
+                        text-transform:uppercase;margin-bottom:0.4rem">Predicted Outcome</div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:2.6rem;
+                        letter-spacing:0.1em;color:{color}">{emoji} {label}</div>
+        </div>""", unsafe_allow_html=True)
+
+        # Probability bars
+        st.markdown("#### Win Probabilities")
+        for team_lbl, prob, bar_color in [
+            (f"🏠 {home_pick}", hw, "#4ade80"),
+            ("🤝 Draw",          dp, "#f5c518"),
+            (f"✈️  {away_pick}", aw, "#f87171"),
+        ]:
+            st.markdown(f"""
+            <div style="margin:0.5rem 0;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span style="font-size:0.88rem">{team_lbl}</span>
+                    <span style="font-weight:700;color:{bar_color}">{prob}%</span>
+                </div>
+                <div style="background:#1e1e3a;border-radius:6px;height:11px;overflow:hidden;">
+                    <div style="width:{int(prob)}%;height:100%;background:{bar_color};
+                                border-radius:6px;"></div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+        # Team stats
+        st.markdown("---")
+        st.markdown("#### Team Form (last 10 WC matches)")
+        hs, as_ = res["home_stats"], res["away_stats"]
+
+        sc1, sc2 = st.columns(2)
+        for col, stats, tname, tcolor in [
+            (sc1, hs,  home_pick, "#4ade80"),
+            (sc2, as_, away_pick, "#f87171"),
+        ]:
+            with col:
+                n = stats["matches"]
+                st.markdown(f"**{tname}**")
+                m1, m2 = st.columns(2)
+                m1.metric("Win Rate",      f"{stats['win_rate']*100:.0f}%")
+                m2.metric("Draw Rate",     f"{stats['draw_rate']*100:.0f}%")
+                m3, m4 = st.columns(2)
+                m3.metric("Goals Scored",  f"{stats['goals_scored']:.2f}")
+                m4.metric("Goals Conceded",f"{stats['goals_conceded']:.2f}")
+                m5, m6 = st.columns(2)
+                m5.metric("Goal Diff",     f"{stats['gd']:+.2f}")
+                m6.metric("WC Matches",    str(n) if n else "No data")
+
+        # Head-to-head
+        h2h = df_raw[
+            ((df_raw["home_team_name"] == home_pick) & (df_raw["away_team_name"] == away_pick)) |
+            ((df_raw["home_team_name"] == away_pick) & (df_raw["away_team_name"] == home_pick))
+        ]
+        if len(h2h) > 0:
+            st.markdown("---")
+            st.markdown("#### Head-to-Head at World Cup")
+            hw_count = (
+                len(h2h[(h2h["home_team_name"]==home_pick) & (h2h["home_team_win"]==1)]) +
+                len(h2h[(h2h["away_team_name"]==home_pick) & (h2h["away_team_win"]==1)])
+            )
+            aw_count = (
+                len(h2h[(h2h["home_team_name"]==away_pick) & (h2h["home_team_win"]==1)]) +
+                len(h2h[(h2h["away_team_name"]==away_pick) & (h2h["away_team_win"]==1)])
+            )
+            draws = int(h2h["draw"].sum())
+            ca, cb, cc, cd = st.columns(4)
+            ca.metric("Matches", len(h2h))
+            cb.metric(f"{home_pick} Wins", hw_count)
+            cc.metric("Draws", draws)
+            cd.metric(f"{away_pick} Wins", aw_count)
+            with st.expander("Full match history"):
+                st.dataframe(
+                    h2h[["match_date","home_team_name","score","away_team_name","result","stage_name"]]
+                    .sort_values("match_date", ascending=False)
+                    .reset_index(drop=True),
+                    use_container_width=True
+                )
+        else:
+            st.info(f"No previous World Cup meetings between {home_pick} and {away_pick}.")
 
 # ─── Footer ───────────────────────────────────────────────────────────────────
 st.markdown("---")
