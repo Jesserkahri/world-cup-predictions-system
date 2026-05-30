@@ -439,7 +439,7 @@ with tab_bracket:
             continue
         st.markdown(f"#### {rname}")
         ncols = min(len(matches), 4)
-        cols = st.columns(ncols) if ncols > 1 else [st]
+        cols = st.columns(ncols)
         for mi, (home, away, winner, loser) in enumerate(matches):
             with cols[mi % ncols]:
                 h_cls = "bracket-winner" if winner == home else "bracket-loser"
